@@ -1,23 +1,23 @@
 backupApp.directive('restoreFilePicker', function() {
-  	return {
-	    restrict: 'E',
-	    require: ['ngSources', 'ngFilters', 'ngBackupId', 'ngTimestamp', 'ngSelected'],
-	    scope: {
-	        ngSources: '=',
-	        ngFilters: '=',
+      return {
+        restrict: 'E',
+        require: ['ngSources', 'ngFilters', 'ngBackupId', 'ngTimestamp', 'ngSelected'],
+        scope: {
+            ngSources: '=',
+            ngFilters: '=',
             ngBackupId: '=',
             ngTimestamp: '=',
             treedata: '=',
             ngSelected: '=',
             ngSearchFilter: '=',
             ngSearchMode: '='
-	    },
-	    templateUrl: 'templates/restorefilepicker.html',
+        },
+        templateUrl: 'templates/restorefilepicker.html',
 
-	    controller: function($scope, $timeout, SystemInfo, AppService, AppUtils) {
+        controller: function($scope, $timeout, SystemInfo, AppService, AppUtils) {
 
-		    var scope = $scope;
-	    	$scope.systeminfo = SystemInfo.watch($scope);
+            var scope = $scope;
+            $scope.systeminfo = SystemInfo.watch($scope);
             $scope.treedata = [];
 
             function compareablePath(path) {
@@ -33,7 +33,7 @@ backupApp.directive('restoreFilePicker', function() {
                 if (!node.children && !node.loading) {
                     node.loading = true;
 
-                    AppService.get('/backup/' + $scope.ngBackupId + '/files/' + encodeURIComponent(node.id) + '?prefix-only=false&folder-contents=true&time=' + encodeURIComponent($scope.ngTimestamp)).then(function(data) {
+                    AppService.get('/backup/' + $scope.ngBackupId + '/files/' + encodeURIComponent(node.id) + '?prefix-only=false&folder-contents=true&time=' + encodeURIComponent($scope.ngTimestamp) + '&filter=' + encodeURIComponent(node.id)).then(function(data) {
                         var children = []
                         var dirsep = scope.systeminfo.DirectorySeparator || '/';
 
@@ -51,6 +51,7 @@ backupApp.directive('restoreFilePicker', function() {
                                 id: data.data.Files[n].Path,
                                 size: data.data.Files[n].Sizes[0],
                                 iconCls: leaf ? 'x-tree-icon-leaf' : '',
+                                entrytype: AppUtils.getEntryTypeFromIconCls(leaf ? 'x-tree-icon-leaf' : ''),
                                 leaf: leaf
                             });
                         }
@@ -101,7 +102,7 @@ backupApp.directive('restoreFilePicker', function() {
 
                 while(e.length > 0) {
                     var el = e.pop();
-                    if (p.length > el.id.length && el.id.substr(el.length - 1, 1) == dirsep && el.children != null) {
+                    if (p.length > el.id.length && el.id.substr(el.id.length - 1, 1) == dirsep && el.children != null) {
                         if (p.indexOf(compareablePath(el.id)) == 0) {
                             for(var n in el.children) {
                                 if (el.children[n] == node)
@@ -160,7 +161,7 @@ backupApp.directive('restoreFilePicker', function() {
                     for (var j = 0; j < parts.length; j++) {
                         cur += parts[j];
                         if (j != parts.length - 1 || is_dir)
-                            cur += '/';
+                            cur += dirsep;
 
                         map[compareablePath(cur)] = true;
                     };
@@ -200,7 +201,7 @@ backupApp.directive('restoreFilePicker', function() {
                         var all = true;
                         var pp = compareablePath(p.id);
                         var map = buildSelectedMap();
-                        map[compareablePath(cur.id)] = true;
+                        map[c] = true;
 
                         for (var i = p.children.length - 1; i >= 0; i--)
                             if (!map[compareablePath(p.children[i].id)]) {
@@ -215,6 +216,9 @@ backupApp.directive('restoreFilePicker', function() {
 
                         cur = p;
                         p = findParent(p);
+
+                        if (p == null && all && !$scope.ngSearchMode)
+                            $scope.ngSelected.push(cur.id);
                     }
 
                 } else {
@@ -291,7 +295,8 @@ backupApp.directive('restoreFilePicker', function() {
                         expanded: items[n].expanded,
                         iconCls: items[n].iconCls,
                         leaf: items[n].leaf,
-                        id: items[n].Path
+                        id: items[n].Path,
+                        entrytype: AppUtils.getEntryTypeFromIconCls(items[n].iconCls)
                     };
                     
                     if (items[n].Children) {
@@ -338,6 +343,6 @@ backupApp.directive('restoreFilePicker', function() {
 
             $scope.$watchCollection('ngSelected', updateCheckState)
             
-	    }
-	};
+        }
+    };
 });

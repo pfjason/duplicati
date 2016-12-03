@@ -330,7 +330,7 @@ namespace Duplicati.Library.Utility
                         {
                             callback(rootpath, f, ATTRIBUTE_ERROR);
                         }
-		
+        
                     if (files != null)
                         foreach(var s in files)
                         {
@@ -751,6 +751,17 @@ namespace Duplicati.Library.Utility
             }
         }
 
+        /// <summary>
+        /// Gets a value indicating if the client is Windows based
+        /// </summary>
+        public static bool IsClientWindows
+        {
+            get
+            {
+                return !IsClientLinux;
+            }
+        }
+
         /// <value>
         /// Returns a value indicating if the filesystem, is case sensitive 
         /// </value>
@@ -896,7 +907,7 @@ namespace Duplicati.Library.Utility
         /// <summary>
         /// The path to the users home directory
         /// </summary>
-        private static readonly string HOME_PATH = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+        private static readonly string HOME_PATH = Environment.GetFolderPath(IsClientLinux ? Environment.SpecialFolder.Personal : Environment.SpecialFolder.UserProfile);
 
         /// <summary>
         /// Expands environment variables, including the tilde character
@@ -923,8 +934,12 @@ namespace Duplicati.Library.Utility
         /// </summary>
         /// <returns>The expanded string.</returns>
         /// <param name="str">The string to expand.</param>
-        public static string ExpandEnvironmentVariablesRegexp(string str)
+        /// <param name="lookup">A lookup method that converts an environment key to an expanded string</param>
+        public static string ExpandEnvironmentVariablesRegexp(string str, Func<string, string> lookup = null)
         {
+            if (lookup == null)
+                lookup = x => Environment.GetEnvironmentVariable(x);
+
             return
 
                 // TODO: Should we switch to using the native format, instead of following the Windows scheme?
@@ -932,7 +947,7 @@ namespace Duplicati.Library.Utility
 
                 ENVIRONMENT_VARIABLE_MATCHER_WINDOWS
                     .Replace(str.Replace("~", Regex.Escape(HOME_PATH)), (m) => 
-                        Regex.Escape(Environment.GetEnvironmentVariable(m.Groups["name"].Value)));
+                        Regex.Escape(lookup(m.Groups["name"].Value)));
         }
 
         /// <summary>
@@ -1076,41 +1091,150 @@ namespace Duplicati.Library.Utility
         }
 
         /// <summary>
+        /// Returns a value indicating if the given type should be treated as a primitive
+        /// </summary>
+        /// <returns><c>true</c>, if type is primitive for serialization, <c>false</c> otherwise.</returns>
+        /// <param name="t">The type to check.</param>
+        private static bool IsPrimitiveTypeForSerialization(Type t)
+        {
+            return t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(DateTime) || t == typeof(TimeSpan);
+        }
+
+        /// <summary>
+        /// Writes a primitive to the output, or returns false if the input is not primitive
+        /// </summary>
+        /// <returns><c>true</c>, the item was printed, <c>false</c> otherwise.</returns>
+        /// <param name="item">The item to write.</param>
+        /// <param name="writer">The target writer.</param>
+        private static bool PrintSerializeIfPrimitive(object item, System.IO.TextWriter writer)
+        {
+            if (item == null)
+            {
+                writer.Write("null");
+                return true;
+            }
+
+            if (IsPrimitiveTypeForSerialization(item.GetType()))
+            {
+                writer.Write(item);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Prints the object to a stream, which can be used for display or logging
         /// </summary>
         /// <returns>The serialized object</returns>
         /// <param name="item">The object to serialize</param>
-        public static void PrintSerializeObject(object item, System.IO.TextWriter writer, Func<System.Reflection.PropertyInfo, bool> filter = null)
-        {
-            foreach(var p in item.GetType().GetProperties())
+        /// <param name="writer">The writer to write the results to</param>
+        /// <param name="filter">A filter applied to properties to decide if they are omitted or not</param>
+        /// <param name="recurseobjects">A value indicating if non-primitive values are recursed</param>
+        /// <param name="indentation">The string indentation</param>
+        /// <param name="visited">A lookup table with visited objects, used to avoid inifinite recursion</param>
+        /// <param name="collectionlimit">The maximum number of items to report from an IEnumerable instance</param>
+        public static void PrintSerializeObject(object item, System.IO.TextWriter writer, Func<System.Reflection.PropertyInfo, object, bool> filter = null, bool recurseobjects = false, int indentation = 0, int collectionlimit = 0, Dictionary<object, object> visited = null)
+        {            
+            visited = visited ?? new Dictionary<object, object>();
+            var indentstring = new string(' ', indentation);
+
+            var first = true;
+
+
+            if (item == null || IsPrimitiveTypeForSerialization(item.GetType()))
             {
-                if (filter != null && !filter(p))
+                writer.Write(indentstring);
+                if (PrintSerializeIfPrimitive(item, writer))
+                    return;
+            }
+
+            foreach (var p in item.GetType().GetProperties())
+            {
+                if (filter != null && !filter(p, item))
                     continue;
-                
-                if (p.PropertyType.IsPrimitive || p.PropertyType == typeof(string))
+
+                if (IsPrimitiveTypeForSerialization(p.PropertyType))
                 {
-                    writer.WriteLine("{0}: {1}", p.Name, p.GetValue(item, null));
+                    if (first)
+                        first = false;
+                    else
+                        writer.WriteLine();
+
+                    writer.Write("{0}{1}: ", indentstring, p.Name);
+                    PrintSerializeIfPrimitive(p.GetValue(item, null), writer);
                 }
                 else if (typeof(System.Collections.IEnumerable).IsAssignableFrom(p.PropertyType))
                 {
                     var enumerable = (System.Collections.IEnumerable)p.GetValue(item, null);
+                    var any = false;
                     if (enumerable != null)
                     {
                         var enumerator = enumerable.GetEnumerator();
                         if (enumerator != null)
                         {
-                            writer.Write("{0}: [", p.Name);
+                            var remain = collectionlimit;
+
+                            if (first)
+                                first = false;
+                            else
+                                writer.WriteLine();
+
+                            writer.Write("{0}{1}: [", indentstring, p.Name);
                             if (enumerator.MoveNext())
                             {
-                                writer.Write(enumerator.Current);
+                                any = true;
+                                writer.WriteLine();
+                                PrintSerializeObject(enumerator.Current, writer, filter, recurseobjects, indentation + 4, collectionlimit, visited);
+
+                                remain--;
+
                                 while (enumerator.MoveNext())
                                 {
-                                    writer.Write(", ");
-                                    writer.Write(enumerator.Current);
+                                    writer.WriteLine(",");
+
+                                    if (remain == 0)
+                                    {
+                                        writer.Write("...");
+                                        break;
+                                    }
+
+                                    PrintSerializeObject(enumerator.Current, writer, filter, recurseobjects, indentation + 4, collectionlimit, visited);
+
+                                    remain--;
                                 }
+
                             }
-                            writer.WriteLine("]");
+
+                            if (any)
+                            {
+                                writer.WriteLine();
+                                writer.Write(indentstring);
+                            }
+                            writer.Write("]");
                         }
+                    }
+                }
+                else if (recurseobjects)
+                {
+                    var value = p.GetValue(item, null);
+                    if (value == null)
+                    {
+                        if (first)
+                            first = false;
+                        else
+                            writer.WriteLine();
+                        writer.Write("{0}{1}: null", indentstring, p.Name);
+                    }
+                    else if (!visited.ContainsKey(value))
+                    {
+                        if (first)
+                            first = false;
+                        else
+                            writer.WriteLine();
+                        writer.WriteLine("{0}{1}:", indentstring, p.Name);
+                        visited[value] = null;
+                        PrintSerializeObject(value, writer, filter, recurseobjects, indentation + 4, collectionlimit, visited);
                     }
                 }
             }
@@ -1122,11 +1246,15 @@ namespace Duplicati.Library.Utility
         /// </summary>
         /// <returns>The serialized object</returns>
         /// <param name="item">The object to serialize</param>
-        public static StringBuilder PrintSerializeObject(object item, StringBuilder sb = null, Func<System.Reflection.PropertyInfo, bool> filter = null)
+        /// <param name="filter">A filter applied to properties to decide if they are omitted or not</param>
+        /// <param name="recurseobjects">A value indicating if non-primitive values are recursed</param>
+        /// <param name="indentation">The string indentation</param>
+        /// <param name="collectionlimit">The maximum number of items to report from an IEnumerable instance, set to zero or less for reporting all</param>
+        public static StringBuilder PrintSerializeObject(object item, StringBuilder sb = null, Func<System.Reflection.PropertyInfo, object, bool> filter = null, bool recurseobjects = false, int indentation = 0, int collectionlimit = 10)
         {
             sb = sb ?? new StringBuilder();
             using(var sw = new System.IO.StringWriter(sb))
-                PrintSerializeObject(item, sw);
+                PrintSerializeObject(item, sw, filter, recurseobjects, indentation, collectionlimit);
             return sb;
         }
 

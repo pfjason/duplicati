@@ -123,6 +123,12 @@ namespace Duplicati.CommandLine
                 }
             }
         }
+
+        public static int Examples(List<string> args, Dictionary<string, string> options, Library.Utility.IFilter filter)
+        {
+            Duplicati.CommandLine.Help.PrintUsage("example", options);
+            return 0;
+        }
     
         public static int Help(List<string> args, Dictionary<string, string> options, Library.Utility.IFilter filter)
         {
@@ -270,7 +276,14 @@ namespace Duplicati.CommandLine
                     string passphrase;
                     options.TryGetValue("passphrase", out passphrase);
                     if (string.IsNullOrEmpty(passphrase))
-                        options["no-encryption"] = "true";
+                    {
+                        string existing;
+                        options.TryGetValue("disable-module", out existing);
+                        if (string.IsNullOrWhiteSpace(existing))
+                            options["disable-module"] = "console-password-input";
+                        else
+                            options["disable-module"] = string.Join(",", new string[] { existing, "console-password-input" });
+                    }
                 }
 
             
@@ -349,34 +362,34 @@ namespace Duplicati.CommandLine
         }
         
         public static int Delete(List<string> args, Dictionary<string, string> options, Library.Utility.IFilter filter)
-		{
-			var requiredOptions = new string[] { "keep-time", "keep-versions", "version" };
+        {
+            var requiredOptions = new string[] { "keep-time", "keep-versions", "version" };
             
-			if (!options.Keys.Where(x => requiredOptions.Contains(x, StringComparer.InvariantCultureIgnoreCase)).Any())
-			{
-				Console.WriteLine(Strings.Program.DeleteCommandNeedsOptions("delete", requiredOptions)); 
-				return 200;
-			}
+            if (!options.Keys.Where(x => requiredOptions.Contains(x, StringComparer.InvariantCultureIgnoreCase)).Any())
+            {
+                Console.WriteLine(Strings.Program.DeleteCommandNeedsOptions("delete", requiredOptions)); 
+                return 200;
+            }
         
-			using(var i = new Library.Main.Controller(args[0], options, new ConsoleOutput(options)))
-			{
-				args.RemoveAt(0);
-				var res = i.Delete();
+            using(var i = new Library.Main.Controller(args[0], options, new ConsoleOutput(options)))
+            {
+                args.RemoveAt(0);
+                var res = i.Delete();
                 
-				if (res.DeletedSets.Count() == 0)
-				{
-					Console.WriteLine(Strings.Program.NoFilesetsMatching);
-				}
-				else
-				{
-					if (res.Dryrun)
-						Console.WriteLine(Strings.Program.WouldDeleteBackups);
-					else
-						Console.WriteLine(Strings.Program.DeletedBackups);
-						
-					foreach(var f in res.DeletedSets)
-						Console.WriteLine(string.Format("{0}: {1}", f.Item1, f.Item2));
-				}
+                if (res.DeletedSets.Count() == 0)
+                {
+                    Console.WriteLine(Strings.Program.NoFilesetsMatching);
+                }
+                else
+                {
+                    if (res.Dryrun)
+                        Console.WriteLine(Strings.Program.WouldDeleteBackups);
+                    else
+                        Console.WriteLine(Strings.Program.DeletedBackups);
+                        
+                    foreach(var f in res.DeletedSets)
+                        Console.WriteLine(string.Format("{0}: {1}", f.Item1, f.Item2));
+                }
             }
             
             return 0;
@@ -462,7 +475,7 @@ namespace Duplicati.CommandLine
                         output.MessageEvent(string.Format("Restored {0} ({1}) files to {2}", res.FilesRestored, Library.Utility.Utility.FormatSizeString(res.SizeOfRestoredFiles), string.IsNullOrEmpty(restorePath) ? "original path" : restorePath));
                         output.MessageEvent(string.Format("Duration of restore: {0:hh\\:mm\\:ss}", res.Duration));
                         
-                        if (res.FilesRestored > 0)
+                        if (res.FilesRestored > 0 && !Library.Main.Utility.SuppressDonationMessages)
                         {
                             output.MessageEvent("***********************************************");
                             output.MessageEvent("Did we help save your files? If so, please support Duplicati with a donation. We suggest 10€ for private use and 100€ for commercial use.");
@@ -552,7 +565,7 @@ namespace Duplicati.CommandLine
             }
 
             if (result.ExaminedFiles == 0 && (filter != null || !filter.Empty))
-                output.MessageEvent("No files were processed. If this was not intentional you may want to use the \"test-filter\" command");
+                output.MessageEvent("No files were processed. If this was not intentional you may want to use the \"test-filters\" command");
 
             output.MessageEvent("Backup completed successfully!");
             
@@ -600,21 +613,21 @@ namespace Duplicati.CommandLine
             using(var i = new Library.Main.Controller(args[0], options, new ConsoleOutput(options)))
                 result = i.Test(tests);
             
-            var totalFiles = result.Changes.Count();
+            var totalFiles = result.Verifications.Count();
             if (totalFiles == 0)
             {
                 Console.WriteLine("No files examined, is the remote destination is empty?");
             }
             else
             {
-                var filtered = from n in result.Changes where n.Value.Count() != 0 select n;
+                var filtered = from n in result.Verifications where n.Value.Count() != 0 select n;
                 if (filtered.Count() == 0)
                     Console.WriteLine("Examined {0} files and found no errors", totalFiles);
                 else
                 {
                     if (Library.Utility.Utility.ParseBoolOption(options, "verbose"))
                     {
-                        foreach(var n in result.Changes)
+                        foreach(var n in result.Verifications)
                         {
                             var changecount = n.Value.Count();
                             if (changecount == 0)
@@ -828,9 +841,11 @@ namespace Duplicati.CommandLine
                 foreach(var line in i.SystemInfo().Lines)
                     Console.WriteLine(line);    
 
+            Console.WriteLine("Know locales: {0}", string.Join(", ", Library.Localization.LocalizationService.AllLocales));
+            Console.WriteLine("Translated locales: {0}", string.Join(", ", Library.Localization.LocalizationService.SupportedCultures));
+
             return 0;
         }
-
     }
 }
 

@@ -73,6 +73,7 @@ namespace Duplicati.Library.Backend
 
         static S3() {
             var ns = new List<KeyValuePair<string, string>> {
+                new KeyValuePair<string, string>("(default)", ""),
                 new KeyValuePair<string, string>("Standard", "STANDARD"),
                 new KeyValuePair<string, string>("Infrequent Access (IA)", "STANDARD_IA"),
                 new KeyValuePair<string, string>("Glacier", "GLACIER"),
@@ -200,7 +201,7 @@ namespace Duplicati.Library.Backend
 
                 if (host.ToLower() == s3host)
                 {
-                    m_bucket = System.Web.HttpUtility.UrlDecode(u.PathAndQuery);
+                    m_bucket = Library.Utility.Uri.UrlDecode(u.PathAndQuery);
 
                     if (m_bucket.StartsWith("/"))
                         m_bucket = m_bucket.Substring(1);
@@ -218,7 +219,7 @@ namespace Duplicati.Library.Backend
                     {
                         m_bucket = host.Substring(0, host.Length - ("." + s3host).Length);
                         host = s3host;
-                        m_prefix = System.Web.HttpUtility.UrlDecode(u.PathAndQuery);
+                        m_prefix = Library.Utility.Uri.UrlDecode(u.PathAndQuery);
 
                         if (m_prefix.StartsWith("/"))
                             m_prefix = m_prefix.Substring(1);
@@ -242,7 +243,7 @@ namespace Duplicati.Library.Backend
             if (m_prefix.Length != 0 && !m_prefix.EndsWith("/"))
                 m_prefix += "/";
 
-            m_wrapper = new S3Wrapper(awsID, awsKey, locationConstraint, host, storageClass, useSSL);
+            m_wrapper = new S3Wrapper(awsID, awsKey, locationConstraint, host, storageClass, useSSL, options);
         }
 
         public static bool IsValidHostname(string bucketname)
@@ -308,8 +309,8 @@ namespace Duplicati.Library.Backend
             {
                 Connection.AddFileStream(m_bucket, GetFullKey(remotename), input);
             }
-			catch (Exception ex)
-			{
+            catch (Exception ex)
+            {
                 //Catch "non-existing" buckets
                 Amazon.S3.AmazonS3Exception s3ex = ex as Amazon.S3.AmazonS3Exception;
                 if (s3ex != null && (s3ex.StatusCode == System.Net.HttpStatusCode.NotFound || "NoSuchBucket".Equals(s3ex.ErrorCode)))
@@ -366,7 +367,21 @@ namespace Duplicati.Library.Backend
                 foreach (KeyValuePair<string, string> s in KNOWN_S3_LOCATIONS)
                     locations.AppendLine(string.Format("{0}: {1}", s.Key, s.Value));
 
-                return new List<ICommandLineArgument>(new ICommandLineArgument[] {
+                var defaults = new Amazon.S3.AmazonS3Config();
+
+                var exts = 
+                    typeof(Amazon.S3.AmazonS3Config).GetProperties().Where(x => x.CanRead && x.CanWrite && (x.PropertyType == typeof(string) || x.PropertyType == typeof(bool) || x.PropertyType == typeof(int) || x.PropertyType == typeof(long) || x.PropertyType.IsEnum))
+                        .Select(x => (ICommandLineArgument)new CommandLineArgument(
+                            "s3-ext-" + x.Name.ToLowerInvariant(), 
+                            x.PropertyType == typeof(bool) ? CommandLineArgument.ArgumentType.Boolean : x.PropertyType.IsEnum ? CommandLineArgument.ArgumentType.Enumeration : CommandLineArgument.ArgumentType.String,
+                            x.Name,
+                            string.Format("Extended option {0}", x.Name),
+                            string.Format("{0}", x.GetValue(defaults)),
+                            null,
+                            x.PropertyType.IsEnum ? Enum.GetNames(x.PropertyType) : null));
+
+
+                var normal = new ICommandLineArgument[] {
                     new CommandLineArgument("aws_secret_access_key", CommandLineArgument.ArgumentType.Password, Strings.S3Backend.AMZKeyDescriptionShort, Strings.S3Backend.AMZKeyDescriptionLong, null, new string[] {"auth-password"}, null),
                     new CommandLineArgument("aws_access_key_id", CommandLineArgument.ArgumentType.String, Strings.S3Backend.AMZUserIDDescriptionShort, Strings.S3Backend.AMZUserIDDescriptionLong, null, new string[] {"auth-username"}, null),
                     new CommandLineArgument(EU_BUCKETS_OPTION, CommandLineArgument.ArgumentType.Boolean, Strings.S3Backend.S3EurobucketDescriptionShort, Strings.S3Backend.S3EurobucketDescriptionLong, "false", null, null, Strings.S3Backend.S3EurobucketDeprecationDescription(LOCATION_OPTION, S3_EU_REGION_NAME)),
@@ -377,7 +392,9 @@ namespace Duplicati.Library.Backend
                     new CommandLineArgument(SSL_OPTION, CommandLineArgument.ArgumentType.Boolean, Strings.S3Backend.DescriptionUseSSLShort, Strings.S3Backend.DescriptionUseSSLLong),
                     new CommandLineArgument("auth-password", CommandLineArgument.ArgumentType.Password, Strings.S3Backend.AuthPasswordDescriptionShort, Strings.S3Backend.AuthPasswordDescriptionLong),
                     new CommandLineArgument("auth-username", CommandLineArgument.ArgumentType.String, Strings.S3Backend.AuthUsernameDescriptionShort, Strings.S3Backend.AuthUsernameDescriptionLong),
-                });
+                };
+
+                return normal.Union(exts).ToList();
 
             }
         }

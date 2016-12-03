@@ -300,8 +300,20 @@ namespace Duplicati.Server
                         )
                 );
 
-            Func<string, string> appendBackslash = x => x.EndsWith("\\") ? x + "\\" : x;
-            exe = "\"" + appendBackslash(exe) + "\"";
+            Func<string, string> commandLineEscapeValue = x =>
+            {
+                if (string.IsNullOrWhiteSpace(x))
+                    return x;
+
+                if (x.EndsWith("\\", StringComparison.Ordinal))
+                    x += "\\";
+
+                x = x.Replace("\"", Library.Utility.Utility.IsClientWindows ? "\"\"" : "\\\"");
+
+                return "\"" + x + "\"";
+            };
+
+            exe = commandLineEscapeValue(exe);
 
             if (Library.Utility.Utility.IsMono)
                 exe = "mono " + exe;
@@ -309,19 +321,21 @@ namespace Duplicati.Server
 
             cmd.Append(exe);
             cmd.Append(" backup");
-            cmd.AppendFormat(" \"{0}\"", appendBackslash(backup.TargetURL));
-            cmd.Append(" \"" + string.Join("\" \"", sources.Select(x => appendBackslash(x))) + "\"");
+            cmd.Append(" ");
+            cmd.Append(commandLineEscapeValue(backup.TargetURL));
+            cmd.Append(" ");
+            cmd.Append(string.Join(" ", sources.Select(x => commandLineEscapeValue(x))));
 
             foreach(var opt in options)
-                cmd.AppendFormat(" --{0}={1}", opt.Key, string.IsNullOrWhiteSpace(opt.Value) ? "" : "\"" + appendBackslash(opt.Value) + "\"");
+                cmd.AppendFormat(" --{0}={1}", opt.Key, commandLineEscapeValue(opt.Value));
             
             if (cf != null)
                 foreach(var f in cf)
-                    cmd.AppendFormat(" --{0}=\"{1}\"", f.Include ? "include" : "exclude", appendBackslash(f.Expression));
+                    cmd.AppendFormat(" --{0}={1}", f.Include ? "include" : "exclude", commandLineEscapeValue(f.Expression));
 
             if (bf != null)
                 foreach(var f in bf)
-                    cmd.AppendFormat(" --{0}=\"{1}\"", f.Include ? "include" : "exclude", appendBackslash(f.Expression));
+                    cmd.AppendFormat(" --{0}={1}", f.Include ? "include" : "exclude", commandLineEscapeValue(f.Expression));
 
             return cmd.ToString();
         }
@@ -464,6 +478,13 @@ namespace Duplicati.Server
                                 return r;
                             }
 
+                        case DuplicatiOperation.Compact:
+                            {
+                            var r = controller.Compact();
+                                UpdateMetadata(backup, r);
+                                return r;
+                            }
+
                         case DuplicatiOperation.CreateReport:
                             {
                                 using(var tf = new Duplicati.Library.Utility.TempFile())
@@ -487,7 +508,33 @@ namespace Duplicati.Server
                                     return r;
                                 }
                             }
-                        default:
+
+                        case DuplicatiOperation.ListRemote:
+                            {
+                                var r = controller.ListRemote();
+                                UpdateMetadata(backup, r);
+                                return r;
+                            }
+
+                    case DuplicatiOperation.Delete:
+                        {
+                            if (Library.Utility.Utility.ParseBoolOption(data.ExtraOptions, "delete-remote-files"))
+                                controller.DeleteAllRemoteFiles();
+
+                            if (Library.Utility.Utility.ParseBoolOption(data.ExtraOptions, "delete-local-db"))
+                            {
+                                string dbpath;
+                                options.TryGetValue("db-path", out dbpath);
+
+                                if (!string.IsNullOrWhiteSpace(dbpath) && System.IO.File.Exists(dbpath))
+                                    System.IO.File.Delete(dbpath);
+                            }
+                            Program.DataConnection.DeleteBackup(backup);
+                            Program.Scheduler.Reschedule();
+                            return null;
+                        }
+
+                    default:
                             //TODO: Log this
                             return null;
                     }
@@ -497,6 +544,7 @@ namespace Duplicati.Server
             {
                 Program.DataConnection.LogError(data.Backup.ID, string.Format("Failed while executing \"{0}\" with id: {1}", data.Operation, data.Backup.ID), ex);
                 UpdateMetadataError(data.Backup, ex);
+                Library.UsageReporter.Reporter.Report(ex);
                 
                 if (!fromQueue)
                     throw;
@@ -564,6 +612,13 @@ namespace Duplicati.Server
                 var r = (Duplicati.Library.Interface.IParsedBackendStatistics)o;
                 UpdateMetadata(backup, r);
             }
+
+            if (o is Duplicati.Library.Interface.IBackendStatsticsReporter)
+            {
+                var r = (Duplicati.Library.Interface.IBackendStatsticsReporter)o;
+                if (r.BackendStatistics is Duplicati.Library.Interface.IParsedBackendStatistics)
+                    UpdateMetadata(backup, (Duplicati.Library.Interface.IParsedBackendStatistics)r.BackendStatistics);
+            }
             
             if (o is Duplicati.Library.Interface.IBackupResults)
             {
@@ -574,9 +629,6 @@ namespace Duplicati.Server
                 backup.Metadata["LastBackupStarted"] = Library.Utility.Utility.SerializeDateTime(((Duplicati.Library.Interface.IBasicResults)o).BeginTime.ToUniversalTime());
                 backup.Metadata["LastBackupFinished"] = Library.Utility.Utility.SerializeDateTime(((Duplicati.Library.Interface.IBasicResults)o).EndTime.ToUniversalTime());
                  
-                if (r.BackendStatistics is Duplicati.Library.Interface.IParsedBackendStatistics)
-                    UpdateMetadata(backup, (Duplicati.Library.Interface.IParsedBackendStatistics)r.BackendStatistics);
-
                 if (r.FilesWithError > 0 || r.Warnings.Any())
                 {
                     Program.DataConnection.RegisterNotification(
@@ -664,8 +716,8 @@ namespace Duplicati.Server
                     (from n in f2
                     let exp = 
                         n.Expression.StartsWith("[") && n.Expression.EndsWith("]")
-                        ? Library.Utility.Utility.ExpandEnvironmentVariablesRegexp(n.Expression)
-                        : Library.Utility.Utility.ExpandEnvironmentVariables(n.Expression)
+                        ? SpecialFolders.ExpandEnvironmentVariablesRegexp(n.Expression)
+                        : SpecialFolders.ExpandEnvironmentVariables(n.Expression)
                     orderby n.Order
                     select (Duplicati.Library.Utility.IFilter)(new Duplicati.Library.Utility.FilterExpression(exp, n.Include)))
                     .Aggregate((a, b) => Duplicati.Library.Utility.FilterExpression.Combine(a, b));
@@ -680,8 +732,8 @@ namespace Duplicati.Server
         {
             return 
                 (from n in Program.DataConnection.Settings
-                where TestIfOptionApplies(backup, mode, n.Filter)
-                select n).ToDictionary(k => k.Name.StartsWith("--") ? k.Name.Substring(2) : k.Name, k => k.Value);
+                 where TestIfOptionApplies(backup, mode, n.Filter)
+                 select n).ToDictionary(k => k.Name.StartsWith("--", StringComparison.Ordinal) ? k.Name.Substring(2) : k.Name, k => k.Value);
         }
         
         private static Duplicati.Library.Utility.IFilter GetCommonFilter(Duplicati.Server.Serialization.Interface.IBackup backup, DuplicatiOperation mode)

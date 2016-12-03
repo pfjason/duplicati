@@ -14,7 +14,7 @@ namespace Duplicati.Library.Modules.Builtin.Strings {
     internal static class CheckMonoSSL {
         public static string Description { get { return LC.L(@"When running with Mono, this module will check if any certificates are installed and suggest installing them otherwise"); } }
         public static string Displayname { get { return LC.L(@"Check for SSL certificates"); } }
-        public static string ErrorMessage { get { return LC.L(@"No certificates found, you can install some with this command:{0}    mozroots --import --sync{0}Read more: {1}", Environment.NewLine, "http://manpages.ubuntu.com/manpages/natty/man1/mozroots.1.html"); } }
+        public static string ErrorMessage { get { return LC.L(@"No certificates found, you can install some with one of these commands:{0}    cert-sync /etc/ssl/certs/ca-certificates.crt #for Debian based systems{0}    cert-sync /etc/pki/tls/certs/ca-bundle.crt #for RedHat derivatives{0}Read more: {1}", Environment.NewLine, "http://www.mono-project.com/docs/about-mono/releases/3.12.0/#cert-sync"); } }
     }
     internal static class HttpOptions {
         public static string Description { get { return LC.L(@"This module exposes a number of properties that can be used to change the way http requests are issued"); } }
@@ -29,6 +29,17 @@ namespace Duplicati.Library.Modules.Builtin.Strings {
         public static string DisplayName { get { return LC.L(@"Configure http requests"); } }
         public static string OauthurlShort { get { return LC.L(@"Alternate OAuth URL"); } }
         public static string OauthurlLong { get { return LC.L(@"Duplicati uses an external server to support the OAuth authentication flow. If you have set up your own Duplicati OAuth server, you can supply the refresh url."); } }
+        public static string SslversionsShort { get { return LC.L(@"Sets allowed SSL versions"); } }
+        public static string SslversionsLong { get { return LC.L(@"This option changes the default SSL versions allowed. This is an advanced option and should only be used if you want to enhance security or work around an issue with a particular SSL protocol."); } }
+    }
+    internal static class HyperVOptions {
+        public static string Description { get { return LC.L(@"This module works internaly to parse source parameters to backup Hyper-V virtual machines"); } }
+        public static string DisplayName { get { return LC.L(@"Configure Hyper-V module"); } }
+    }
+    internal static class MSSQLOptions
+    {
+        public static string Description { get { return LC.L(@"This module works internaly to parse source parameters to backup Microsoft SQL Server databases"); } }
+        public static string DisplayName { get { return LC.L(@"Configure Microsoft SQL Server module"); } }
     }
     internal static class RunScript {
         public static string Description { get { return LC.L(@"Executes a script before starting an operation, and again on completion"); } }
@@ -81,13 +92,14 @@ Mail Sender <sender@example.com>"); } }
         public static string OptionServerLong { get { return LC.L(@"A url for the SMTP server, e.g. smtp://example.com:25. Multiple servers can be supplied in a prioritized list, seperated with semicolon. If a server fails, the next server in the list is tried, until the message has been sent.
 If no server is supplied, a DNS lookup is performed to find the first recipient's MX record, and all SMTP servers are tried in their priority order until the message is sent.
 
-To enable TLS, use the format smtptls://example.com or tls://example.com. If no port is specified, port 25 is used for non-ssl, and 587 for SSL connections. Note that only TLS/STARTTLS is supported and not SMTP over SSL."); } }
+To enable SMTP over SSL, use the format smtps://example.com. To enable SMTP STARTTLS, use the format smtp://example.com:25/?starttls=when-available or smtp://example.com:25/?starttls=always. If no port is specified, port 25 is used for non-ssl, and 587 for SSL connections."); } }
         public static string OptionServerShort { get { return LC.L(@"SMTP Url"); } }
         public static string OptionSubjectLong(string optionname) { return LC.L(@"This setting supplies the email subject. Values are replaced as described in the description for --{0}.", optionname); }
         public static string OptionSubjectShort { get { return LC.L(@"The email subject"); } }
         public static string OptionUsernameLong { get { return LC.L(@"The username used to authenticate with the SMTP server if required."); } }
         public static string OptionUsernameShort { get { return LC.L(@"SMTP Username"); } }
         public static string SendMailFailedError(string message) { return LC.L(@"Failed to send email: {0}", message); }
+        public static string SendMailLog(string message) { return LC.L(@"Whole SMTP communication: {0}", message); }
         public static string SendMailFailedRetryError(string failedserver, string message, string retryserver) { return LC.L(@"Failed to send email with server: {0}, message: {1}, retrying with {2}", failedserver, message, retryserver); }
         public static string SendMailSuccess(string server) { return LC.L(@"Email sent successfully using server: {0}", server); }
     }
@@ -114,7 +126,7 @@ You can supply multiple options with a comma seperator, e.g. ""{0},{1}"". The sp
         public static string SendxmppanyoperationShort { get { return LC.L(@"Send messages for all operations"); } }
         public static string SendxmppanyoperationLong { get { return LC.L(@"By default, messages will only be sent after a Backup operation. Use this option to send messages for all operations"); } }
         public static string DisplayName { get { return LC.L(@"XMPP report module"); } }
-        public static string Description { get { return LC.L(@"This module provides support for sending status reports via XMPP messagesß"); } }
+        public static string Description { get { return LC.L(@"This module provides support for sending status reports via XMPP messages"); } }
         public static string LoginTimeoutError { get { return LC.L(@"Timeout occured while logging in to jabber server"); } }
         public static string SendMessageError(string message) { return LC.L(@"Failed to send jabber message: {0}", message); }
     }

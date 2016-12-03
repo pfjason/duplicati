@@ -48,6 +48,11 @@ namespace Duplicati.Library.Main
         Recreate_Running,
         Verify_Running,
 
+        BugReport_Running,
+
+        Delete_Listing,
+        Delete_Deleting,
+
         Error
     }
 }

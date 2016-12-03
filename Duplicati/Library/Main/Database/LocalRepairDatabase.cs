@@ -21,103 +21,103 @@ using System.Collections.Generic;
 
 namespace Duplicati.Library.Main.Database
 {
-	internal class LocalRepairDatabase : LocalDatabase
-	{
-		public LocalRepairDatabase(string path)
-			: base(LocalDatabase.CreateConnection(path), "Repair")
-		{
-		
-		}
-		
-		public long GetFilesetIdFromRemotename(string filelist)
-		{
-			using(var cmd = m_connection.CreateCommand())
-			{
-				var filesetid = cmd.ExecuteScalarInt64(@"SELECT ""Fileset"".""ID"" FROM ""Fileset"",""RemoteVolume"" WHERE ""Fileset"".""VolumeID"" = ""RemoteVolume"".""ID"" AND ""RemoteVolume"".""Name"" = ?", -1, filelist);
+    internal class LocalRepairDatabase : LocalDatabase
+    {
+        public LocalRepairDatabase(string path)
+            : base(path, "Repair", true)
+        {
+        
+        }
+        
+        public long GetFilesetIdFromRemotename(string filelist)
+        {
+            using(var cmd = m_connection.CreateCommand())
+            {
+                var filesetid = cmd.ExecuteScalarInt64(@"SELECT ""Fileset"".""ID"" FROM ""Fileset"",""RemoteVolume"" WHERE ""Fileset"".""VolumeID"" = ""RemoteVolume"".""ID"" AND ""RemoteVolume"".""Name"" = ?", -1, filelist);
                 if (filesetid == -1)
-					throw new Exception(string.Format("No such remote file: {0}", filelist));
-					
+                    throw new Exception(string.Format("No such remote file: {0}", filelist));
+                    
                 return filesetid;
-			}
-		}
+            }
+        }
 
-		public interface IBlockSource
-		{
-			string File { get; }
-			long Offset { get; }
-		}
-		
-		public interface IBlockWithSources :  LocalBackupDatabase.IBlock
-		{
-			IEnumerable<IBlockSource> Sources { get; }
-		}
-		
-		private class BlockWithSources : LocalBackupDatabase.Block, IBlockWithSources
-		{
-			private class BlockSource : IBlockSource
-			{
-				public string File { get; private set; }
-				public long Offset { get; private set; }
-				
-				public BlockSource(string file, long offset)
-				{
-					this.File = file;
-					this.Offset = offset;
-					
-				}
-			}
-		
-			private System.Data.IDataReader m_rd;
-			public bool Done { get; private set; }
-			
-			public BlockWithSources(System.Data.IDataReader rd)
+        public interface IBlockSource
+        {
+            string File { get; }
+            long Offset { get; }
+        }
+        
+        public interface IBlockWithSources :  LocalBackupDatabase.IBlock
+        {
+            IEnumerable<IBlockSource> Sources { get; }
+        }
+        
+        private class BlockWithSources : LocalBackupDatabase.Block, IBlockWithSources
+        {
+            private class BlockSource : IBlockSource
+            {
+                public string File { get; private set; }
+                public long Offset { get; private set; }
+                
+                public BlockSource(string file, long offset)
+                {
+                    this.File = file;
+                    this.Offset = offset;
+                    
+                }
+            }
+        
+            private System.Data.IDataReader m_rd;
+            public bool Done { get; private set; }
+            
+            public BlockWithSources(System.Data.IDataReader rd)
                 : base(rd.GetString(0), rd.GetInt64(1))
-			{
-				m_rd = rd;
-				Done = !m_rd.Read();
-			}
-			
-			public IEnumerable<IBlockSource> Sources
-			{
-				get
-				{
-					if (Done)
-						yield break;
-					
+            {
+                m_rd = rd;
+                Done = !m_rd.Read();
+            }
+            
+            public IEnumerable<IBlockSource> Sources
+            {
+                get
+                {
+                    if (Done)
+                        yield break;
+                    
                     var cur = new BlockSource(m_rd.GetString(2), m_rd.GetInt64(3));
-					var file = cur.File;
-					
-					while(!Done && cur.File == file)
-					{
-						yield return cur;
-						Done = m_rd.Read();
-						if (!Done)
+                    var file = cur.File;
+                    
+                    while(!Done && cur.File == file)
+                    {
+                        yield return cur;
+                        Done = m_rd.Read();
+                        if (!Done)
                             cur = new BlockSource(m_rd.GetString(2), m_rd.GetInt64(3));
-					}
-				}
-			}
-		}
-				
-		private class RemoteVolume : IRemoteVolume
-		{
-			public string Name { get; private set; }
-			public string Hash { get; private set; }
-			public long Size { get; private set; }
-			
-			public RemoteVolume(string name, string hash, long size)
-			{
-				this.Name = name;
-				this.Hash = hash;
-				this.Size = size;
-			}
-		}
-		
-		public IEnumerable<IRemoteVolume> GetBlockVolumesFromIndexName(string name)
-		{
-			using(var cmd = m_connection.CreateCommand())
+                    }
+                }
+            }
+        }
+                
+        private class RemoteVolume : IRemoteVolume
+        {
+            public string Name { get; private set; }
+            public string Hash { get; private set; }
+            public long Size { get; private set; }
+            
+            public RemoteVolume(string name, string hash, long size)
+            {
+                this.Name = name;
+                this.Hash = hash;
+                this.Size = size;
+            }
+        }
+        
+        public IEnumerable<IRemoteVolume> GetBlockVolumesFromIndexName(string name)
+        {
+            using(var cmd = m_connection.CreateCommand())
                 foreach(var rd in cmd.ExecuteReaderEnumerable(@"SELECT ""Name"", ""Hash"", ""Size"" FROM ""RemoteVolume"" WHERE ""ID"" IN (SELECT ""BlockVolumeID"" FROM ""IndexBlockLink"" WHERE ""IndexVolumeID"" IN (SELECT ""ID"" FROM ""RemoteVolume"" WHERE ""Name"" = ?))", name))
                     yield return new RemoteVolume(rd.GetString(0), rd.ConvertValueToString(1), rd.ConvertValueToInt64(2));
-		}
+        }
         
         public interface IMissingBlockList : IDisposable
         {
@@ -478,7 +478,7 @@ namespace Duplicati.Library.Main.Database
 
                     try
                     {
-                        VerifyConsistency(tr, blocksize, hashsize);
+                        VerifyConsistency(tr, blocksize, hashsize, true);
                     }
                     catch(Exception ex)
                     {
@@ -490,6 +490,87 @@ namespace Duplicati.Library.Main.Database
                 }
             }
         }
-	}
+
+        public void CheckAllBlocksAreInVolume(string filename, IEnumerable<KeyValuePair<string, long>> blocks)
+        {
+            using(var tr = m_connection.BeginTransaction())
+            using(var cmd = m_connection.CreateCommand(tr))
+            {
+                var tablename = "ProbeBlocks-" + Library.Utility.Utility.ByteArrayAsHexString(Guid.NewGuid().ToByteArray());
+
+                cmd.ExecuteNonQuery(string.Format(@"CREATE TEMPORARY TABLE ""{0}"" (""Hash"" TEXT NOT NULL, ""Size"" INTEGER NOT NULL)", tablename));
+                cmd.CommandText = string.Format(@"INSERT INTO ""{0}"" (""Hash"", ""Size"") VALUES (?, ?)", tablename);
+                cmd.AddParameters(2);
+
+                foreach(var kp in blocks)
+                {
+                    cmd.SetParameterValue(0, kp.Key);
+                    cmd.SetParameterValue(1, kp.Value);
+                    cmd.ExecuteNonQuery();
+                }
+
+                var id = cmd.ExecuteScalarInt64(@"SELECT ""ID"" FROM ""RemoteVolume"" WHERE ""Name"" = ?", -1, filename);
+                var aliens = cmd.ExecuteScalarInt64(string.Format(@"SELECT COUNT(*) FROM (SELECT ""A"".""VolumeID"" FROM ""{0}"" B LEFT OUTER JOIN ""Block"" A ON ""A"".""Hash"" = ""B"".""Hash"" AND ""A"".""Size"" = ""B"".""Size"") WHERE ""VolumeID"" != ? ", tablename), 0, id);
+
+                cmd.ExecuteNonQuery(string.Format(@"DROP TABLE IF EXISTS ""{0}"" ", tablename));
+
+                if (aliens != 0)
+                    throw new Exception(string.Format("Not all blocks were found in {0}", filename));
+            }
+        }
+
+        public void CheckBlocklistCorrect(string hash, long length, IEnumerable<string> blocklist, long blocksize, long blockhashlength)
+        {
+            using(var cmd = m_connection.CreateCommand())
+            {
+                var query = string.Format(@"
+SELECT 
+    ""C"".""Hash"", 
+    ""C"".""Size""
+FROM 
+    ""BlocksetEntry"" A, 
+    (
+        SELECT 
+            ""Y"".""BlocksetID"",
+            ""Y"".""Hash"" AS ""BlocklistHash"",
+            ""Y"".""Index"" AS ""BlocklistHashIndex"",
+            ""Z"".""Size"" AS ""BlocklistSize"",
+            ""Z"".""ID"" AS ""BlocklistHashBlockID"" 
+        FROM 
+            ""BlocklistHash"" Y,
+            ""Block"" Z 
+        WHERE 
+            ""Y"".""Hash"" = ""Z"".""Hash"" AND ""Y"".""Hash"" = ? AND ""Z"".""Size"" = ?
+        LIMIT 1
+    ) B,
+    ""Block"" C
+WHERE 
+    ""A"".""BlocksetID"" = ""B"".""BlocksetID"" 
+    AND 
+    ""A"".""BlockID"" = ""C"".""ID""
+    AND
+    ""A"".""Index"" >= ""B"".""BlocklistHashIndex"" * ({0} / {1})
+    AND
+    ""A"".""Index"" < (""B"".""BlocklistHashIndex"" + 1) * ({0} / {1})
+ORDER BY 
+    ""A"".""Index""
+
+"
+                ,blocksize, blockhashlength);
+
+                var en = blocklist.GetEnumerator();
+                foreach(var r in cmd.ExecuteReaderEnumerable(query, hash, length))
+                {
+                    if (!en.MoveNext())
+                        throw new Exception(string.Format("Too few entries in source blocklist with hash {0}", hash));
+                    if (en.Current != r.GetString(0))
+                        throw new Exception(string.Format("Mismatch in blocklist with hash {0}", hash));
+                }
+
+                if (en.MoveNext())
+                    throw new Exception(string.Format("Too many source blocklist entries in {0}", hash));
+            }
+        }
+    }
 }
 

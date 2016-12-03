@@ -26,8 +26,14 @@ backupApp.directive('destinationFolderPicker', function() {
             return scope.systeminfo.CaseSensitiveFilesystem ? path : path.toLowerCase();
         };
 
+        function setEntryType(n)
+        {
+            n.entrytype = AppUtils.getEntryTypeFromIconCls(n.iconCls);
+        }        
+
         function setIconCls(n) {
             var cp = compareablePath(n.id);
+            var dirsep = scope.systeminfo.DirectorySeparator || '/';
 
             if (cp == compareablePath('%MY_DOCUMENTS%'))
                 n.iconCls = 'x-tree-icon-mydocuments';
@@ -39,10 +45,10 @@ backupApp.directive('destinationFolderPicker', function() {
                 n.iconCls = 'x-tree-icon-desktop';
             else if (cp == compareablePath('%HOME%'))
                 n.iconCls = 'x-tree-icon-home';
-            else if (defunctmap[cp])
-                n.iconCls = 'x-tree-icon-broken';
             else if (cp.substr(cp.length - 1, 1) != dirsep)
                 n.iconCls = 'x-tree-icon-leaf';
+
+            setEntryType(n);
         }
 
         $scope.toggleExpanded = function(node) {
@@ -60,6 +66,10 @@ backupApp.directive('destinationFolderPicker', function() {
                 AppService.post('/filesystem?onlyfolders=true&showhidden=true', {path: node.id}).then(function(data) {
                     node.children = data.data;
                     node.loading = false;
+
+                    if (node.children != null)
+                        for(var i in node.children)
+                            setEntryType(node.children[i]);
                     
                 }, function() {
                     node.loading = false;
@@ -119,7 +129,10 @@ backupApp.directive('destinationFolderPicker', function() {
                     usernode.children.push(data.data[i]);
                 }
                 else
-                    systemnode.children.push(data.data[i]);
+                {
+                    setEntryType(data.data[i]);
+                    systemnode.children.push(data.data[i]);                    
+                }
             }
 
             updateHideUserNode();

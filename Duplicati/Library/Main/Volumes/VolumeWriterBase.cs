@@ -22,7 +22,7 @@ namespace Duplicati.Library.Main.Volumes
         
         public void SetRemoteFilename(string name)
         {
-        	m_volumename = name;
+            m_volumename = name;
         }
 
         public VolumeWriterBase(Options options)
@@ -32,20 +32,28 @@ namespace Duplicati.Library.Main.Volumes
         
         public static string GenerateGuid(Options options)
         {
-        	var s = Guid.NewGuid().ToString("N");
-        	
-        	//We can choose shorter GUIDs here
-        	
-        	return s;
-        	
+            var s = Guid.NewGuid().ToString("N");
+            
+            //We can choose shorter GUIDs here
+            
+            return s;
+            
+        }
+
+        public void ResetRemoteFilename(Options options, DateTime timestamp)
+        {
+            m_volumename = GenerateFilename(this.FileType, options.Prefix, GenerateGuid(options), timestamp, options.CompressionModule, options.NoEncryption ? null : options.EncryptionModule);
         }
 
         public VolumeWriterBase(Options options, DateTime timestamp)
             : base(options)
         {
-            m_localfile = new Library.Utility.TempFile();
+            if (!string.IsNullOrWhiteSpace(options.AsynchronousUploadFolder))
+                m_localfile = Library.Utility.TempFile.CreateInFolder(options.AsynchronousUploadFolder);
+            else
+                m_localfile = new Library.Utility.TempFile();
 
-			m_volumename = GenerateFilename(this.FileType, options.Prefix, GenerateGuid(options), timestamp, options.CompressionModule, options.NoEncryption ? null : options.EncryptionModule);
+            ResetRemoteFilename(options, timestamp);
             m_compression = DynamicLoader.CompressionLoader.GetModule(options.CompressionModule, m_localfile, options.RawOptions);
             
             if(m_compression == null)

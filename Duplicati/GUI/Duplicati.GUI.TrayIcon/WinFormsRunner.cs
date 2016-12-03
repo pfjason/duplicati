@@ -145,6 +145,15 @@ namespace Duplicati.GUI.TrayIcon.Windows
         {
             if (m_onSingleClick != null)
                 m_onSingleClick();
+            else if (m_trayIcon != null && m_trayIcon.ContextMenuStrip != null)
+            {
+                // Show context menu on left-click as we have nothing happening otherwise
+                try
+                {
+                    typeof(NotifyIcon).GetMethod("ShowContextMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(m_trayIcon, null);
+                }
+                catch { }
+            }
         }
         
         private void m_trayIcon_DoubleClick(object sender, EventArgs e)
@@ -172,23 +181,23 @@ namespace Duplicati.GUI.TrayIcon.Windows
                 switch (value)
                 {
                     case TrayIcons.IdleError:
-                        m_trayIcon.Icon = ImageLoader.TrayNormalError;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.ErrorIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                     case TrayIcons.Paused:
-                        m_trayIcon.Icon = ImageLoader.TrayNormalPause;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.PauseIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                     case TrayIcons.PausedError:
-                        m_trayIcon.Icon = ImageLoader.TrayNormalPause;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.PauseIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                     case TrayIcons.Running:
-                        m_trayIcon.Icon = ImageLoader.TrayWorking;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.WorkingIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                     case TrayIcons.RunningError:
-                        m_trayIcon.Icon = ImageLoader.TrayWorking;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.WorkingIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                     case TrayIcons.Idle:
                     default:
-                        m_trayIcon.Icon = ImageLoader.TrayNormal;
+                        m_trayIcon.Icon = ImageLoader.LoadIcon(ImageLoader.NormalIcon, System.Windows.Forms.SystemInformation.SmallIconSize);
                         break;
                 }
             }

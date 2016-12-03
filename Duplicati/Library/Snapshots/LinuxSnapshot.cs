@@ -35,11 +35,6 @@ namespace Duplicati.Library.Snapshots
     /// </summary>
     public class LinuxSnapshot : ISnapshotService
     {
-        /// <summary>
-        /// A frequently used char-as-string
-        /// </summary>
-        protected readonly string DIR_SEP = System.IO.Path.DirectorySeparatorChar.ToString();
-
         protected readonly SystemIOLinux _sysIO = new SystemIOLinux();
         
         /// <summary>
@@ -397,9 +392,9 @@ namespace Duplicati.Library.Snapshots
         /// <param name="callback">The callback to invoke with each found path</param>
         public IEnumerable<string> EnumerateFilesAndFolders(Duplicati.Library.Utility.Utility.EnumerationFilterDelegate callback)
         {
-        	return m_entries.SelectMany(
-        		s => Utility.Utility.EnumerateFileSystemEntries(s.Key, callback, this.ListFolders, this.ListFiles, this.GetAttributes)
-        	);
+            return m_entries.SelectMany(
+                s => Utility.Utility.EnumerateFileSystemEntries(s.Key, callback, this.ListFolders, this.ListFiles, this.GetAttributes)
+            );
         }
         
         /// <summary>
@@ -460,7 +455,7 @@ namespace Duplicati.Library.Snapshots
         public string GetSymlinkTarget(string file)
         {
             var local = ConvertToSnapshotPath(FindSnapShotByLocalPath(file), file);
-            return UnixSupport.File.GetSymlinkTarget(local.EndsWith(DIR_SEP) ? local.Substring(0, local.Length - 1) : local);
+            return UnixSupport.File.GetSymlinkTarget(NoSnapshot.NormalizePath(local));
         }
 
         /// <summary>
@@ -468,10 +463,12 @@ namespace Duplicati.Library.Snapshots
         /// </summary>
         /// <returns>The metadata for the given file or folder</returns>
         /// <param name="file">The file or folder to examine</param>
-        public Dictionary<string, string> GetMetadata(string file)
+        /// <param name="isSymlink">A flag indicating if the target is a symlink</param>
+        /// <param name="followSymlink">A flag indicating if a symlink should be followed</param>
+        public Dictionary<string, string> GetMetadata(string file, bool isSymlink, bool followSymlink)
         {
             var local = ConvertToSnapshotPath(FindSnapShotByLocalPath(file), file);
-            return _sysIO.GetMetadata(local);
+            return _sysIO.GetMetadata(local, isSymlink, followSymlink);
         }
         
         /// <summary>
@@ -481,7 +478,7 @@ namespace Duplicati.Library.Snapshots
         /// <param name="file">The file or folder to examine</param>
         public bool IsBlockDevice(string file)
         {
-            var n = UnixSupport.File.GetFileType(file.EndsWith(DIR_SEP) ? file.Substring(0, file.Length - 1) : file);
+            var n = UnixSupport.File.GetFileType(NoSnapshot.NormalizePath(file));
             switch (n)
             {
                 case UnixSupport.File.FileType.Directory:
@@ -501,7 +498,7 @@ namespace Duplicati.Library.Snapshots
         public string HardlinkTargetID(string path)
         {
             var local = ConvertToSnapshotPath(FindSnapShotByLocalPath(path), path);
-            local = local.EndsWith(DIR_SEP) ? local.Substring(0, local.Length - 1) : local;
+            local = NoSnapshot.NormalizePath(local);
             
             if (UnixSupport.File.GetHardlinkCount(local) <= 1)
                 return null;

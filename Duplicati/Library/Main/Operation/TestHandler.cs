@@ -73,6 +73,7 @@ namespace Duplicati.Library.Main.Operation
                         if (m_results.TaskControlRendevouz() == TaskControlState.Stop)
                         {
                             backend.WaitForComplete(db, null);
+                            m_results.EndTime = DateTime.UtcNow;
                             return;
                         }    
 
@@ -81,7 +82,7 @@ namespace Duplicati.Library.Main.Operation
 
                         KeyValuePair<string, IEnumerable<KeyValuePair<TestEntryStatus, string>>> res;
                         using(var tf = vol.TempFile)
-                            res = TestVolumeInternals(db, vol, tf, m_options, m_results);
+                            res = TestVolumeInternals(db, vol, tf, m_options, m_results, m_options.FullBlockVerification ? 1.0 : 0.2);
                         m_results.AddResult(res.Key, res.Value);
                         
                         db.UpdateVerificationCount(vol.Name);
@@ -91,7 +92,10 @@ namespace Duplicati.Library.Main.Operation
                         m_results.AddResult(vol.Name, new KeyValuePair<Duplicati.Library.Interface.TestEntryStatus, string>[] { new KeyValuePair<Duplicati.Library.Interface.TestEntryStatus, string>(Duplicati.Library.Interface.TestEntryStatus.Error, ex.Message) });
                         m_results.AddError(string.Format("Failed to process file {0}", vol.Name), ex);
                         if (ex is System.Threading.ThreadAbortException)
+                        {
+                            m_results.EndTime = DateTime.UtcNow;
                             throw;
+                        }
                     }
                 }
             }
@@ -100,9 +104,12 @@ namespace Duplicati.Library.Main.Operation
                 foreach(var f in files)
                 {
                     try
-                    {   
+                    {
                         if (m_results.TaskControlRendevouz() == TaskControlState.Stop)
+                        {
+                            m_results.EndTime = DateTime.UtcNow;
                             return;
+                        }
 
                         progress++;
                         m_results.OperationProgressUpdater.UpdateProgress((float)progress / files.Count);
@@ -137,10 +144,15 @@ namespace Duplicati.Library.Main.Operation
                         m_results.AddResult(f.Name, new KeyValuePair<Duplicati.Library.Interface.TestEntryStatus, string>[] { new KeyValuePair<Duplicati.Library.Interface.TestEntryStatus, string>(Duplicati.Library.Interface.TestEntryStatus.Error, ex.Message) });
                         m_results.AddError(string.Format("Failed to process file {0}", f.Name), ex);
                         if (ex is System.Threading.ThreadAbortException)
+                        {
+                            m_results.EndTime = DateTime.UtcNow;
                             throw;
+                        }
                     }
                 }
             }
+
+            m_results.EndTime = DateTime.UtcNow;
         }
 
         /// <summary>
@@ -149,14 +161,14 @@ namespace Duplicati.Library.Main.Operation
         /// <param name="vol">The remote volume being examined</param>
         /// <param name="tf">The path to the downloaded copy of the file</param>
         /// <param name="sample_percent">A value between 0 and 1 that indicates how many blocks are tested in a dblock file</param>
-        public static KeyValuePair<string, IEnumerable<KeyValuePair<TestEntryStatus, string>>> TestVolumeInternals(LocalTestDatabase db, IRemoteVolume vol, string tf, Options options, ILogWriter log, double sample_percent = 0.2)
+        public static KeyValuePair<string, IEnumerable<KeyValuePair<TestEntryStatus, string>>> TestVolumeInternals(LocalTestDatabase db, IRemoteVolume vol, string tf, Options options, ILogWriter log, double sample_percent)
         {
             var blockhasher = System.Security.Cryptography.HashAlgorithm.Create(options.BlockHashAlgorithm);
  
             if (blockhasher == null)
-                throw new Exception(Strings.Foresthash.InvalidHashAlgorithm(options.BlockHashAlgorithm));
+                throw new Exception(Strings.Common.InvalidHashAlgorithm(options.BlockHashAlgorithm));
             if (!blockhasher.CanReuseTransform)
-                throw new Exception(Strings.Foresthash.InvalidCryptoSystem(options.BlockHashAlgorithm));
+                throw new Exception(Strings.Common.InvalidCryptoSystem(options.BlockHashAlgorithm));
                 
             var hashsize = blockhasher.HashSize / 8;
             var parsedInfo = Volumes.VolumeBase.ParseFilename(vol.Name);

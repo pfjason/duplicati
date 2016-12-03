@@ -118,9 +118,16 @@ namespace Duplicati.Server
                     Program.DataConnection.ApplicationSettings.LastUpdateCheck = started;
                     nextCheck = Program.DataConnection.ApplicationSettings.NextUpdateCheck;
 
+                    Library.AutoUpdater.ReleaseType rt;
+                    if (!Enum.TryParse<Library.AutoUpdater.ReleaseType>(Program.DataConnection.ApplicationSettings.UpdateChannel, true, out rt))
+                        rt = Duplicati.Library.AutoUpdater.ReleaseType.Unknown;
+
+                    // Choose the default channel in case we have unknown
+                    rt = rt == Duplicati.Library.AutoUpdater.ReleaseType.Unknown ? Duplicati.Library.AutoUpdater.AutoUpdateSettings.DefaultUpdateChannel : rt;
+
                     try
-                    {
-                        var update = Duplicati.Library.AutoUpdater.UpdaterManager.CheckForUpdate();
+                    {                        
+                        var update = Duplicati.Library.AutoUpdater.UpdaterManager.CheckForUpdate(rt);
                         if (update != null)
                             Program.DataConnection.ApplicationSettings.UpdatedVersion = update;
                     }
@@ -128,7 +135,27 @@ namespace Duplicati.Server
                     {
                     }
 
-                    if (Program.DataConnection.ApplicationSettings.UpdatedVersion != null && Program.DataConnection.ApplicationSettings.UpdatedVersion.Version != System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString())
+                    // It could be that we have registered an update from a more unstable channel, 
+                    // but the user has switched to a more stable channel.
+                    // In that case we discard the old update to avoid offering it.
+                    if (Program.DataConnection.ApplicationSettings.UpdatedVersion != null)
+                    {
+                        Library.AutoUpdater.ReleaseType updatert;
+                        var updatertstring = Program.DataConnection.ApplicationSettings.UpdatedVersion.ReleaseType;
+                        if (string.Equals(updatertstring, "preview", StringComparison.OrdinalIgnoreCase))
+                            updatertstring = Library.AutoUpdater.ReleaseType.Experimental.ToString();
+                        
+                        if (!Enum.TryParse<Library.AutoUpdater.ReleaseType>(updatertstring, true, out updatert))
+                            updatert = Duplicati.Library.AutoUpdater.ReleaseType.Nightly;
+
+                        if (updatert == Duplicati.Library.AutoUpdater.ReleaseType.Unknown)
+                            updatert = Duplicati.Library.AutoUpdater.ReleaseType.Nightly;
+                        
+                        if (updatert > rt)
+                            Program.DataConnection.ApplicationSettings.UpdatedVersion = null;
+                    }
+
+                    if (Program.DataConnection.ApplicationSettings.UpdatedVersion != null && Duplicati.Library.AutoUpdater.UpdaterManager.TryParseVersion(Program.DataConnection.ApplicationSettings.UpdatedVersion.Version) > System.Reflection.Assembly.GetExecutingAssembly().GetName().Version)
                     {
                         Program.DataConnection.RegisterNotification(
                                     NotificationType.Information,

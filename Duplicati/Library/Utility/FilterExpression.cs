@@ -379,15 +379,16 @@ namespace Duplicati.Library.Utility
             includes = false;
             excludes = false;
 
-            Tuple<bool, bool> cacheLookup;
+            Tuple<bool, bool> cacheLookup = null;
 
             // Check for cached results
-            lock(_matchLock)
-                if (_matchFallbackLookup.TryGetValue(filter, out cacheLookup))
-                {
-                    includes = cacheLookup.Item1;
-                    excludes = cacheLookup.Item2;
-                }
+            if (filter != null)
+                lock(_matchLock)
+                    if (_matchFallbackLookup.TryGetValue(filter, out cacheLookup))
+                    {
+                        includes = cacheLookup.Item1;
+                        excludes = cacheLookup.Item2;
+                    }
 
             // Figure out what components are in the filter
             if (cacheLookup == null)
@@ -496,6 +497,10 @@ namespace Duplicati.Library.Utility
             return new JoinedFilterExpression(first, second);
         }
 
+        /// <summary>
+        /// Returns a <see cref="System.String"/> that represents the current <see cref="Duplicati.Library.Utility.FilterExpression"/>.
+        /// </summary>
+        /// <returns>A <see cref="System.String"/> that represents the current <see cref="Duplicati.Library.Utility.FilterExpression"/>.</returns>
         public override string ToString()
         {
             if (this.Empty)
@@ -508,6 +513,85 @@ namespace Duplicati.Library.Utility
                         select n.Type == FilterType.Regexp ? "[" + n.Filter + "]" : n.Filter)
                 ) +
                 ")";
+        }
+
+        /// <summary>
+        /// Serializes the filter instance into a list of strings 
+        /// that can be passed to the deserialize method
+        /// </summary>
+        public string[] Serialize()
+        {
+            if (this.Empty)
+                return null;
+
+            return
+                (from n in m_filters
+                    select string.Format(
+                        "{0}{1}{2}{3}", 
+                        this.Result ? "+" : "-", 
+                        n.Type == FilterType.Regexp ? "[" : "", 
+                        n.Filter, 
+                        n.Type == FilterType.Regexp ? "]" : ""
+                    )
+                ).ToArray();
+        }
+
+        /// <summary>
+        /// Serializes the filter instance into a list of strings 
+        /// that can be passed to the deserialize method
+        /// </summary>
+        public static string[] Serialize(IFilter filter)
+        {
+            if (filter == null || filter.Empty)
+                return new string[0];
+            
+            IEnumerable<string> res = new string[0];
+            var work = new Stack<IFilter>();
+            work.Push(filter);
+
+            while (work.Count > 0)
+            {
+                var f = work.Pop();
+
+                if (f is FilterExpression)
+                    res = res.Union(((FilterExpression)f).Serialize());
+                else if (f is JoinedFilterExpression)
+                {
+                    work.Push(((JoinedFilterExpression)f).Second);
+                    work.Push(((JoinedFilterExpression)f).First);
+                }
+                else
+                    throw new Exception(string.Format("Cannot serialize filter instance of type: {0}", f.GetType()));
+
+            }
+            return res.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+        }
+
+        /// <summary>
+        /// Builds a filter expression from a list of strings
+        /// prefixed with either minus or plus
+        /// </summary>
+        /// <param name="filters">The filters to deserialize from.</param>
+        public static IFilter Deserialize(string[] filters)
+        {
+            if (filters == null || filters.Length == 0)
+                return null;
+
+            IFilter res = null;
+            foreach(var n in filters) 
+            {
+                bool include;
+                if (n.StartsWith("+"))
+                    include = true;
+                else if (n.StartsWith("-"))
+                    include = false;
+                else
+                    continue;
+
+                res = Combine(res, new FilterExpression(n.Substring(1), include));
+            }
+
+            return res;
         }
     }
 }
